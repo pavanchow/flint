@@ -34,10 +34,20 @@ versions stay on disk untouched until compaction, which is what keeps writes che
 ### Durability and crash safety
 
 Every record is CRC32-checked. On `open`, each segment is replayed in order and folded into the
-keydir; replay stops a segment at the first record whose CRC fails or whose bytes are short, which
+keydir. Replay stops a segment at the first record whose CRC fails or whose bytes are short, which
 is exactly what a torn trailing write from a crash looks like. Committed records before the tear are
-preserved. `flush` pushes the active segment's buffered bytes to the OS. A future durability mode
-will add per-write or group-commit `fsync` for callers who need it.
+preserved.
+
+Two durability levels. By default writes are crash-safe against process death (the reader above).
+For power-loss durability, `flush`/`set_sync_writes`/`--fsync` perform a real `fsync`. Replay also
+caps `klen`/`vlen` at `MAX_KV` before allocating, so a corrupt or hostile segment cannot request a
+multi-gigabyte buffer.
+
+Compaction is crash-atomic. The merged segment is `sync_all`'d and the directory entry is fsync'd
+*before* any old segment is unlinked. Because the merged segment carries a higher id than the
+originals, a crash at any point leaves a recoverable state on reopen: if the merge did not finish,
+the originals are still present and win nothing they should not; once it finished, the merged
+segment wins. The old segments are only removed after the merged data is durable.
 
 ### Compaction
 

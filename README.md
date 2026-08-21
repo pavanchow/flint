@@ -30,7 +30,7 @@ Reads are a single seek. Reopening the directory replays the log to rebuild the 
 ## Use it as a server
 
 ```
-flint --dir ./data serve --port 6380
+flint --dir ./data serve --port 6380          # add --fsync for power-loss durability
 ```
 
 Then talk to it with anything, even netcat:
@@ -66,8 +66,21 @@ Flint is a Bitcask-style log-structured store.
 - **Crash safety.** Each record carries a CRC32. On open, Flint replays every segment and stops a
   segment at the first torn or corrupt record, so a half-written trailing write from a crash is
   discarded rather than trusted.
-- **Compaction.** Merges the live keys into one fresh segment and deletes the old ones, reclaiming
-  the space held by overwritten versions and tombstones.
+- **Compaction is crash-atomic.** The merged segment is fsync'd and its directory entry made durable
+  *before* any old segment is unlinked, so a power loss mid-compaction can never destroy the only
+  copy of the data. On reopen the merged segment wins.
+
+## Durability
+
+By default writes are crash-safe against process death: on reopen Flint replays the log and discards
+any torn trailing record. For durability against **power loss**, fsync the writes:
+
+- `Store::flush()` performs a real `fsync` of the active segment.
+- `Store::set_sync_writes(true)` fsyncs every `set` and `delete` before it returns.
+- The server takes `--fsync` for the same per-write guarantee. Segment rollover and compaction
+  always fsync regardless, so only the most recent un-rolled writes depend on this flag.
+
+The CLI and MCP server fsync after each write, so a `flint set` is durable when the command returns.
 
 ## Use it as agent memory (MCP)
 

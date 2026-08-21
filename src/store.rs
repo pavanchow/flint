@@ -12,6 +12,10 @@ use std::sync::Mutex;
 const HEADER: usize = 12; // crc(4) + klen(4) + vlen(4)
 const TOMBSTONE: u32 = u32::MAX;
 const SEG_EXT: &str = "flog";
+/// Upper bound on a single key or value. Rejects absurd lengths on write and
+/// caps replay allocations from a corrupt/hostile segment. Well below TOMBSTONE
+/// so a real value length can never collide with the tombstone sentinel.
+pub const MAX_KV: usize = 256 * 1024 * 1024;
 
 /// Where a key's current value lives on disk.
 #[derive(Clone, Copy)]
@@ -29,6 +33,13 @@ struct Inner {
     readers: HashMap<u64, File>,
     keydir: HashMap<Vec<u8>, Loc>,
     seg_cap: u64,
+    /// When true, every write is fsync'd before returning (power-loss durable).
+    sync_writes: bool,
+}
+
+/// fsync a directory so a rename/unlink of its entries is itself durable.
+fn sync_dir(dir: &Path) -> io::Result<()> {
+    File::open(dir)?.sync_all()
 }
 
 /// An embedded key-value store backed by one directory of append-only segments.
@@ -111,11 +122,21 @@ impl Store {
                 readers,
                 keydir,
                 seg_cap,
+                sync_writes: false,
             }),
         })
     }
 
+    /// Enable per-write fsync. Off by default (crash-safe against process death,
+    /// fast). On means every `set`/`delete` is durable against power loss.
+    pub fn set_sync_writes(&self, on: bool) {
+        self.inner.lock().unwrap().sync_writes = on;
+    }
+
     pub fn set(&self, key: &[u8], val: &[u8]) -> io::Result<()> {
+        if key.len() > MAX_KV || val.len() > MAX_KV {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "key or value exceeds MAX_KV"));
+        }
         let mut g = self.inner.lock().unwrap();
         g.roll_if_needed()?;
         let rec = encode(key, Some(val));
@@ -125,6 +146,9 @@ impl Store {
         let val_pos = rec_start + HEADER as u64 + key.len() as u64;
         let loc = Loc { file_id: g.active_id, val_pos, val_len: val.len() as u32 };
         g.keydir.insert(key.to_vec(), loc);
+        if g.sync_writes {
+            g.active.sync_all()?;
+        }
         Ok(())
     }
 
@@ -149,6 +173,9 @@ impl Store {
         g.active.write_all(&rec)?;
         g.active_len += rec.len() as u64;
         g.keydir.remove(key);
+        if g.sync_writes {
+            g.active.sync_all()?;
+        }
         Ok(true)
     }
 
@@ -160,8 +187,11 @@ impl Store {
         self.len() == 0
     }
 
+    /// Durably persist all buffered writes: fsync the active segment. This is a
+    /// real `fsync`, not a userspace buffer flush, so data survives power loss.
     pub fn flush(&self) -> io::Result<()> {
-        self.inner.lock().unwrap().active.flush()
+        let g = self.inner.lock().unwrap();
+        g.active.sync_all()
     }
 
     /// Number of on-disk segment files. Compaction drives this back toward 2.
@@ -183,7 +213,7 @@ impl Inner {
         if self.active_len < self.seg_cap {
             return Ok(());
         }
-        self.active.flush()?;
+        self.active.sync_all()?; // the segment we are leaving must be durable
         let new_id = self.active_id + 1;
         let path = seg_path(&self.dir, new_id);
         self.active = OpenOptions::new().create(true).read(true).append(true).open(&path)?;
@@ -201,6 +231,9 @@ impl Inner {
                 self.readers.entry(loc.file_id).or_insert(f)
             }
         };
+        if loc.val_len as usize > MAX_KV {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "value length exceeds MAX_KV"));
+        }
         f.seek(SeekFrom::Start(loc.val_pos))?;
         let mut buf = vec![0u8; loc.val_len as usize];
         f.read_exact(&mut buf)?;
@@ -225,7 +258,11 @@ impl Inner {
             new_keydir.insert(key, Loc { file_id: merged_id, val_pos, val_len: val.len() as u32 });
             pos += rec.len() as u64;
         }
-        merged.flush()?;
+        // The merged segment must be fully durable BEFORE any old segment is
+        // unlinked, so a power loss mid-compaction can never destroy the only
+        // copy of the data. On reopen the higher-id merged segment wins.
+        merged.sync_all()?;
+        sync_dir(&self.dir)?;
 
         let old_ids: Vec<u64> = self.readers.keys().copied().collect();
 
@@ -237,6 +274,7 @@ impl Inner {
         for id in old_ids {
             let _ = fs::remove_file(seg_path(&self.dir, id));
         }
+        sync_dir(&self.dir)?; // make the unlinks durable too
 
         self.readers.clear();
         self.readers.insert(merged_id, File::open(&merged_path)?);
@@ -266,6 +304,13 @@ fn replay(path: &Path, file_id: u64, keydir: &mut HashMap<Vec<u8>, Loc>) -> io::
         let vlen = u32::from_le_bytes(header[8..12].try_into().unwrap());
         let tomb = vlen == TOMBSTONE;
         let actual_vlen = if tomb { 0 } else { vlen as usize };
+
+        // Cap lengths before allocating, so a corrupt/hostile segment cannot
+        // request a multi-gigabyte buffer. Treat an over-cap length as the end
+        // of valid data in this segment.
+        if klen as usize > MAX_KV || actual_vlen > MAX_KV {
+            break;
+        }
 
         let mut key = vec![0u8; klen as usize];
         let mut val = vec![0u8; actual_vlen];
@@ -388,6 +433,43 @@ mod tests {
         let s2 = Store::open(&dir, 128).unwrap();
         assert_eq!(s2.get(b"hot").unwrap().as_deref(), Some(&b"v199"[..]));
         assert_eq!(s2.get(b"live").unwrap().as_deref(), Some(&b"yes"[..]));
+    }
+
+    #[test]
+    fn rejects_oversize_key_or_value() {
+        let dir = fresh("oversize");
+        let s = Store::open(&dir, 1 << 20).unwrap();
+        let big = vec![0u8; MAX_KV + 1];
+        assert!(s.set(b"k", &big).is_err());
+        assert!(s.set(&big, b"v").is_err());
+        assert!(s.set(b"k", b"ok").is_ok());
+    }
+
+    #[test]
+    fn corrupt_huge_length_does_not_allocate_or_panic() {
+        let dir = fresh("corruptlen");
+        let _ = Store::open(&dir, 1 << 20).unwrap();
+        // Hand-write a segment claiming a 4GB key. Replay must not allocate it.
+        let seg = dir.join("000001.flog");
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&0u32.to_le_bytes());          // crc (ignored, we break first)
+        bytes.extend_from_slice(&0xFFFF_FFFEu32.to_le_bytes()); // klen ~4GB
+        bytes.extend_from_slice(&0u32.to_le_bytes());           // vlen
+        fs::write(&seg, &bytes).unwrap();
+        let s = Store::open(&dir, 1 << 20).unwrap(); // must return, not OOM/panic
+        assert_eq!(s.len(), 0);
+    }
+
+    #[test]
+    fn sync_writes_mode_persists() {
+        let dir = fresh("fsync");
+        {
+            let s = Store::open(&dir, 1 << 20).unwrap();
+            s.set_sync_writes(true);
+            s.set(b"durable", b"yes").unwrap();
+        }
+        let s = Store::open(&dir, 1 << 20).unwrap();
+        assert_eq!(s.get(b"durable").unwrap().as_deref(), Some(&b"yes"[..]));
     }
 
     #[test]

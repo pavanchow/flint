@@ -23,6 +23,9 @@ enum Cmd {
     Serve {
         #[arg(long, default_value_t = 6380)]
         port: u16,
+        /// fsync every write before replying (power-loss durable, slower).
+        #[arg(long)]
+        fsync: bool,
     },
     /// Run as an MCP server over stdio so an agent can use Flint as scratch memory.
     Mcp,
@@ -42,7 +45,8 @@ fn main() -> std::io::Result<()> {
     let cli = Cli::parse();
     let store = Store::open(&cli.dir, cli.seg_cap)?;
     match cli.cmd {
-        Cmd::Serve { port } => {
+        Cmd::Serve { port, fsync } => {
+            store.set_sync_writes(fsync);
             let store = Arc::new(store);
             server::serve(
                 store,

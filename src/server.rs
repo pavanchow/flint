@@ -12,7 +12,7 @@
 //! this protocol; a value is the rest of the line and may contain spaces.
 
 use crate::Store;
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::thread;
@@ -58,13 +58,20 @@ pub fn serve(store: Arc<Store>, cfg: Config) -> io::Result<()> {
     Ok(())
 }
 
+const MAX_LINE: u64 = 512 * 1024 * 1024; // reject a client that never sends a newline
+
 fn handle(store: Arc<Store>, stream: TcpStream) -> io::Result<()> {
     let mut w = stream.try_clone()?;
     let mut r = BufReader::new(stream);
     let mut line = String::new();
     loop {
         line.clear();
-        if r.read_line(&mut line)? == 0 {
+        let read = (&mut r).take(MAX_LINE).read_line(&mut line)?;
+        if read == 0 {
+            return Ok(());
+        }
+        if read as u64 == MAX_LINE && !line.ends_with('\n') {
+            w.write_all(b"ERR line too long\n")?;
             return Ok(());
         }
         let line = line.trim_end_matches(['\r', '\n']);
