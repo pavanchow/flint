@@ -44,7 +44,18 @@ COMPACT               -> OK
 PING                  -> PONG
 ```
 
-A background thread compacts segments automatically as they accumulate.
+Text keys are whitespace-delimited. For keys or values containing spaces or NUL
+bytes, use the length-prefixed binary commands:
+
+```
+BSET <klen> <vlen>\n<key bytes><value bytes>   -> OK
+BGET <klen>\n<key bytes>                        -> $<len> then value bytes, or nil
+BDEL <klen>\n<key bytes>                        -> 1 or 0
+```
+
+A background thread compacts segments automatically as they accumulate. Concurrent
+connections are capped (`--max-conn`, default 1024) so a connection flood cannot
+exhaust file descriptors.
 
 ## Use it from the shell
 

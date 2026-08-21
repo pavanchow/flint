@@ -26,6 +26,9 @@ enum Cmd {
         /// fsync every write before replying (power-loss durable, slower).
         #[arg(long)]
         fsync: bool,
+        /// Reject new connections past this many concurrent ones.
+        #[arg(long, default_value_t = 1024)]
+        max_conn: usize,
     },
     /// Run as an MCP server over stdio so an agent can use Flint as scratch memory.
     Mcp,
@@ -45,12 +48,17 @@ fn main() -> std::io::Result<()> {
     let cli = Cli::parse();
     let store = Store::open(&cli.dir, cli.seg_cap)?;
     match cli.cmd {
-        Cmd::Serve { port, fsync } => {
+        Cmd::Serve { port, fsync, max_conn } => {
             store.set_sync_writes(fsync);
             let store = Arc::new(store);
             server::serve(
                 store,
-                Config { port, compact_at_segments: 8, compact_interval: Duration::from_secs(30) },
+                Config {
+                    port,
+                    compact_at_segments: 8,
+                    compact_interval: Duration::from_secs(30),
+                    max_connections: max_conn,
+                },
             )?;
         }
         Cmd::Set { key, value } => {

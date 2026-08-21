@@ -5,9 +5,9 @@
 
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{self, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::RwLock;
 
 const HEADER: usize = 12; // crc(4) + klen(4) + vlen(4)
 const TOMBSTONE: u32 = u32::MAX;
@@ -42,9 +42,29 @@ fn sync_dir(dir: &Path) -> io::Result<()> {
     File::open(dir)?.sync_all()
 }
 
+/// Read exactly `buf.len()` bytes at `off` without moving a shared file cursor,
+/// so a shared `&File` can be read concurrently under a read lock.
+#[cfg(unix)]
+fn read_exact_at(f: &File, buf: &mut [u8], off: u64) -> io::Result<()> {
+    use std::os::unix::fs::FileExt;
+    f.read_exact_at(buf, off)
+}
+#[cfg(not(unix))]
+fn read_exact_at(f: &File, buf: &mut [u8], off: u64) -> io::Result<()> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = f.try_clone()?; // own cursor, so the seek is local
+    f.seek(SeekFrom::Start(off))?;
+    f.read_exact(buf)
+}
+
 /// An embedded key-value store backed by one directory of append-only segments.
+///
+/// Guarded by an `RwLock`: `get` takes a read lock and reads its value with a
+/// positioned read, so many reads run concurrently; `set`, `delete`, and
+/// `compact` take the write lock. Segment files are append-only and immutable,
+/// so a positioned read never races an in-place mutation.
 pub struct Store {
-    inner: Mutex<Inner>,
+    inner: RwLock<Inner>,
 }
 
 fn seg_path(dir: &Path, id: u64) -> PathBuf {
@@ -114,7 +134,7 @@ impl Store {
             .or_insert(File::open(&active_path)?);
 
         Ok(Store {
-            inner: Mutex::new(Inner {
+            inner: RwLock::new(Inner {
                 dir,
                 active_id,
                 active,
@@ -130,14 +150,14 @@ impl Store {
     /// Enable per-write fsync. Off by default (crash-safe against process death,
     /// fast). On means every `set`/`delete` is durable against power loss.
     pub fn set_sync_writes(&self, on: bool) {
-        self.inner.lock().unwrap().sync_writes = on;
+        self.inner.write().unwrap().sync_writes = on;
     }
 
     pub fn set(&self, key: &[u8], val: &[u8]) -> io::Result<()> {
         if key.len() > MAX_KV || val.len() > MAX_KV {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "key or value exceeds MAX_KV"));
         }
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.inner.write().unwrap();
         g.roll_if_needed()?;
         let rec = encode(key, Some(val));
         let rec_start = g.active_len;
@@ -153,7 +173,7 @@ impl Store {
     }
 
     pub fn get(&self, key: &[u8]) -> io::Result<Option<Vec<u8>>> {
-        let mut g = self.inner.lock().unwrap();
+        let g = self.inner.read().unwrap();
         let loc = match g.keydir.get(key).copied() {
             Some(l) => l,
             None => return Ok(None),
@@ -164,7 +184,7 @@ impl Store {
     /// Append a tombstone and drop the key from the index. Returns whether the
     /// key was present.
     pub fn delete(&self, key: &[u8]) -> io::Result<bool> {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.inner.write().unwrap();
         if !g.keydir.contains_key(key) {
             return Ok(false);
         }
@@ -180,7 +200,7 @@ impl Store {
     }
 
     pub fn len(&self) -> usize {
-        self.inner.lock().unwrap().keydir.len()
+        self.inner.read().unwrap().keydir.len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -190,20 +210,20 @@ impl Store {
     /// Durably persist all buffered writes: fsync the active segment. This is a
     /// real `fsync`, not a userspace buffer flush, so data survives power loss.
     pub fn flush(&self) -> io::Result<()> {
-        let g = self.inner.lock().unwrap();
+        let g = self.inner.read().unwrap();
         g.active.sync_all()
     }
 
     /// Number of on-disk segment files. Compaction drives this back toward 2.
     pub fn segment_count(&self) -> usize {
-        self.inner.lock().unwrap().readers.len()
+        self.inner.read().unwrap().readers.len()
     }
 
     /// Merge every live key into one fresh segment and delete the old ones, then
     /// start a new empty active segment. Reclaims the space held by stale
     /// versions and tombstones.
     pub fn compact(&self) -> io::Result<()> {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.inner.write().unwrap();
         g.compact()
     }
 }
@@ -223,20 +243,22 @@ impl Inner {
         Ok(())
     }
 
-    fn read_value(&mut self, loc: Loc) -> io::Result<Vec<u8>> {
-        let f = match self.readers.get_mut(&loc.file_id) {
-            Some(f) => f,
-            None => {
-                let f = File::open(seg_path(&self.dir, loc.file_id))?;
-                self.readers.entry(loc.file_id).or_insert(f)
-            }
-        };
+    /// Read a value with a positioned read. Takes `&self` (no cursor mutation),
+    /// so it is safe under a shared read lock and many reads run concurrently.
+    fn read_value(&self, loc: Loc) -> io::Result<Vec<u8>> {
         if loc.val_len as usize > MAX_KV {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "value length exceeds MAX_KV"));
         }
-        f.seek(SeekFrom::Start(loc.val_pos))?;
         let mut buf = vec![0u8; loc.val_len as usize];
-        f.read_exact(&mut buf)?;
+        match self.readers.get(&loc.file_id) {
+            Some(f) => read_exact_at(f, &mut buf, loc.val_pos)?,
+            None => {
+                // Every live segment is registered on open/roll/compact, so this
+                // is a cold-path fallback; an owned handle keeps it lock-safe.
+                let f = File::open(seg_path(&self.dir, loc.file_id))?;
+                read_exact_at(&f, &mut buf, loc.val_pos)?;
+            }
+        }
         Ok(buf)
     }
 
@@ -470,6 +492,36 @@ mod tests {
         }
         let s = Store::open(&dir, 1 << 20).unwrap();
         assert_eq!(s.get(b"durable").unwrap().as_deref(), Some(&b"yes"[..]));
+    }
+
+    #[test]
+    fn concurrent_reads_and_writes() {
+        use std::sync::Arc;
+        use std::thread;
+        let dir = fresh("concurrent");
+        let s = Arc::new(Store::open(&dir, 1 << 16).unwrap());
+        for i in 0..200u32 {
+            s.set(format!("k{i}").as_bytes(), format!("v{i}").as_bytes()).unwrap();
+        }
+        let mut hs = Vec::new();
+        for t in 0..8u32 {
+            let s = Arc::clone(&s);
+            hs.push(thread::spawn(move || {
+                for i in 0..200u32 {
+                    // readers run concurrently with the writer below
+                    let got = s.get(format!("k{i}").as_bytes()).unwrap();
+                    assert!(got.is_some());
+                    if t == 0 {
+                        s.set(format!("k{i}").as_bytes(), format!("v{i}-new").as_bytes()).unwrap();
+                    }
+                }
+            }));
+        }
+        for h in hs {
+            h.join().unwrap();
+        }
+        assert_eq!(s.get(b"k5").unwrap().as_deref(), Some(&b"v5-new"[..]));
+        assert_eq!(s.len(), 200);
     }
 
     #[test]

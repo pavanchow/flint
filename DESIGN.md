@@ -58,10 +58,16 @@ threshold; the library and CLI expose it explicitly.
 
 ## Concurrency
 
-v0.1 guards the engine with a single mutex, so operations are serialized and always consistent,
-including during compaction. This is the correctness-first baseline. A later version can move reads
-to a read-write lock or per-segment immutable readers so reads run concurrently with writes, since
-old segments are never mutated in place.
+The engine is guarded by an `RwLock`. Because segment files are append-only and immutable, a read
+never races an in-place mutation, so `get` takes a read lock and reads its value with a positioned
+read (`pread` on Unix, an owned-handle seek elsewhere) that never touches a shared file cursor. Many
+reads therefore run in parallel. `set`, `delete`, and `compact` take the write lock. The keydir and
+the reader-handle map are swapped atomically under that lock, so a reader is never handed a `Loc`
+pointing at a segment that has been unlinked.
+
+The TCP server bounds concurrency with a live-connection counter: connections past `max_connections`
+are rejected with `ERR too many connections` rather than spawning an unbounded thread, so a flood
+cannot exhaust file descriptors.
 
 ## Deliberate non-goals for v0.1
 

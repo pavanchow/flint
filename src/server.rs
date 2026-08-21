@@ -1,22 +1,28 @@
-//! A small line protocol over TCP so any client (even netcat) can talk to Flint,
+//! A small protocol over TCP so any client (even netcat) can talk to Flint,
 //! plus a background thread that compacts segments as they pile up.
 //!
+//! Text commands (keys are whitespace-delimited, values are the rest of the line):
 //!   SET <key> <value...>   -> OK
 //!   GET <key>              -> $<len> then the raw value bytes, or `nil`
 //!   DEL <key>              -> 1 or 0
 //!   LEN                    -> number of live keys
-//!   COMPACT                -> OK
-//!   PING                   -> PONG
+//!   COMPACT / PING / QUIT
 //!
-//! Keys are whitespace-delimited, so keys themselves cannot contain spaces over
-//! this protocol; a value is the rest of the line and may contain spaces.
+//! Binary commands (length-prefixed, so keys/values may contain spaces or NUL):
+//!   BSET <klen> <vlen>\n<key bytes><value bytes>   -> OK
+//!   BGET <klen>\n<key bytes>                        -> $<len> then value bytes, or `nil`
+//!   BDEL <klen>\n<key bytes>                        -> 1 or 0
 
+use crate::store::MAX_KV;
 use crate::Store;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
+
+const MAX_LINE: u64 = 16 * 1024 * 1024; // backstop for the text protocol
 
 pub struct Config {
     pub port: u16,
@@ -24,6 +30,16 @@ pub struct Config {
     pub compact_at_segments: usize,
     /// How often the background thread checks.
     pub compact_interval: Duration,
+    /// Reject new TCP connections past this many concurrent ones.
+    pub max_connections: usize,
+}
+
+/// Decrements the live-connection counter when a connection's thread ends.
+struct ConnGuard(Arc<AtomicUsize>);
+impl Drop for ConnGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 pub fn serve(store: Arc<Store>, cfg: Config) -> io::Result<()> {
@@ -44,10 +60,20 @@ pub fn serve(store: Arc<Store>, cfg: Config) -> io::Result<()> {
         });
     }
 
+    let active = Arc::new(AtomicUsize::new(0));
     for stream in listener.incoming() {
-        let stream = stream?;
+        let mut stream = stream?;
+        // Bound concurrency: reject rather than spawn an unbounded thread that
+        // would exhaust file descriptors under a connection flood.
+        if active.fetch_add(1, Ordering::SeqCst) >= cfg.max_connections {
+            active.fetch_sub(1, Ordering::SeqCst);
+            let _ = stream.write_all(b"ERR too many connections\n");
+            continue;
+        }
+        let guard = ConnGuard(Arc::clone(&active));
         let store = Arc::clone(&store);
         thread::spawn(move || {
+            let _guard = guard; // held for the life of the connection
             if let Err(e) = handle(store, stream) {
                 if e.kind() != io::ErrorKind::UnexpectedEof {
                     eprintln!("flint: connection error: {e}");
@@ -58,7 +84,11 @@ pub fn serve(store: Arc<Store>, cfg: Config) -> io::Result<()> {
     Ok(())
 }
 
-const MAX_LINE: u64 = 512 * 1024 * 1024; // reject a client that never sends a newline
+fn read_n(r: &mut impl BufRead, n: usize) -> io::Result<Vec<u8>> {
+    let mut buf = vec![0u8; n];
+    r.read_exact(&mut buf)?;
+    Ok(buf)
+}
 
 fn handle(store: Arc<Store>, stream: TcpStream) -> io::Result<()> {
     let mut w = stream.try_clone()?;
@@ -74,10 +104,10 @@ fn handle(store: Arc<Store>, stream: TcpStream) -> io::Result<()> {
             w.write_all(b"ERR line too long\n")?;
             return Ok(());
         }
-        let line = line.trim_end_matches(['\r', '\n']);
-        let (cmd, rest) = match line.split_once(' ') {
+        let trimmed = line.trim_end_matches(['\r', '\n']);
+        let (cmd, rest) = match trimmed.split_once(' ') {
             Some((c, r)) => (c, r),
-            None => (line, ""),
+            None => (trimmed, ""),
         };
         match cmd.to_ascii_uppercase().as_str() {
             "SET" => {
@@ -91,21 +121,53 @@ fn handle(store: Arc<Store>, stream: TcpStream) -> io::Result<()> {
                 store.set(key.as_bytes(), val.as_bytes())?;
                 w.write_all(b"OK\n")?;
             }
-            "GET" => match store.get(rest.as_bytes())? {
-                Some(v) => {
-                    w.write_all(format!("${}\n", v.len()).as_bytes())?;
-                    w.write_all(&v)?;
-                    w.write_all(b"\n")?;
-                }
-                None => w.write_all(b"nil\n")?,
-            },
+            "GET" => reply_get(&mut w, &store.get(rest.as_bytes())?)?,
             "DEL" => {
                 let hit = store.delete(rest.as_bytes())?;
                 w.write_all(if hit { b"1\n" } else { b"0\n" })?;
             }
-            "LEN" => {
-                w.write_all(format!("{}\n", store.len()).as_bytes())?;
+            // Length-prefixed binary variants: keys and values may hold spaces/NUL.
+            "BSET" => {
+                let (klen, vlen) = match parse_two_lens(rest) {
+                    Some(pair) => pair,
+                    None => {
+                        w.write_all(b"ERR usage: BSET <klen> <vlen>\n")?;
+                        continue;
+                    }
+                };
+                if klen > MAX_KV || vlen > MAX_KV {
+                    w.write_all(b"ERR length exceeds MAX_KV\n")?;
+                    return Ok(()); // stream framing is now ambiguous, close it
+                }
+                let key = read_n(&mut r, klen)?;
+                let val = read_n(&mut r, vlen)?;
+                store.set(&key, &val)?;
+                w.write_all(b"OK\n")?;
             }
+            "BGET" => {
+                let klen = match rest.trim().parse::<usize>() {
+                    Ok(n) if n <= MAX_KV => n,
+                    _ => {
+                        w.write_all(b"ERR usage: BGET <klen>\n")?;
+                        return Ok(());
+                    }
+                };
+                let key = read_n(&mut r, klen)?;
+                reply_get(&mut w, &store.get(&key)?)?;
+            }
+            "BDEL" => {
+                let klen = match rest.trim().parse::<usize>() {
+                    Ok(n) if n <= MAX_KV => n,
+                    _ => {
+                        w.write_all(b"ERR usage: BDEL <klen>\n")?;
+                        return Ok(());
+                    }
+                };
+                let key = read_n(&mut r, klen)?;
+                let hit = store.delete(&key)?;
+                w.write_all(if hit { b"1\n" } else { b"0\n" })?;
+            }
+            "LEN" => w.write_all(format!("{}\n", store.len()).as_bytes())?,
             "COMPACT" => {
                 store.compact()?;
                 w.write_all(b"OK\n")?;
@@ -119,4 +181,21 @@ fn handle(store: Arc<Store>, stream: TcpStream) -> io::Result<()> {
         }
         w.flush()?;
     }
+}
+
+fn reply_get(w: &mut impl Write, v: &Option<Vec<u8>>) -> io::Result<()> {
+    match v {
+        Some(v) => {
+            w.write_all(format!("${}\n", v.len()).as_bytes())?;
+            w.write_all(v)?;
+            w.write_all(b"\n")?;
+        }
+        None => w.write_all(b"nil\n")?,
+    }
+    Ok(())
+}
+
+fn parse_two_lens(rest: &str) -> Option<(usize, usize)> {
+    let (a, b) = rest.trim().split_once(' ')?;
+    Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
 }
