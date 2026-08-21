@@ -69,13 +69,24 @@ Flint is a Bitcask-style log-structured store.
 - **Compaction.** Merges the live keys into one fresh segment and deletes the old ones, reclaiming
   the space held by overwritten versions and tombstones.
 
+## Use it as agent memory (MCP)
+
+```
+flint --dir ./data mcp
+claude mcp add flint -- /path/to/flint --dir ./data mcp
+```
+
+Exposes `flint_set`, `flint_get`, `flint_delete`, and `flint_len` over stdio, so an agent gets
+durable scratch memory that survives across sessions.
+
 ## Stack
 
-Rust. Two dependencies: `crc32fast` for record integrity and `clap` for the CLI. Release builds
-are LTO-optimized and stripped into a single static binary. See [DESIGN.md](DESIGN.md).
+Rust. The engine depends only on `crc32fast` for record integrity; `clap` powers the CLI and
+`serde_json` the MCP server. Release builds are LTO-optimized and stripped into a single static
+binary. See [DESIGN.md](DESIGN.md).
 
 ## Status
 
 v0.1: storage engine (append-only segments, in-memory index, CRC crash safety, segment rollover,
-compaction), TCP line protocol with background compaction, and a CLI. Next: an HTTP API, an MCP
-server so an agent can use Flint as scratch memory, and optional group-commit fsync durability modes.
+compaction), TCP line protocol with background compaction, a CLI, and an MCP server. Next: an HTTP
+API and optional group-commit fsync durability modes.

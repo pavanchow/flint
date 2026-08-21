@@ -24,6 +24,8 @@ enum Cmd {
         #[arg(long, default_value_t = 6380)]
         port: u16,
     },
+    /// Run as an MCP server over stdio so an agent can use Flint as scratch memory.
+    Mcp,
     /// Set a key to a value, then exit.
     Set { key: String, value: String },
     /// Get a key and print its value, then exit. Exit 1 if absent.
@@ -69,6 +71,7 @@ fn main() -> std::io::Result<()> {
             store.compact()?;
             println!("OK");
         }
+        Cmd::Mcp => flint::mcp::serve_mcp(Arc::new(store))?,
         Cmd::Len => println!("{}", store.len()),
     }
     Ok(())
