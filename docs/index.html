@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Flint: an embedded, single-binary key-value store with a persistent log and in-memory index</title>
-  <meta name="description" content="Flint is an embedded, single-binary key-value store: a persistent append-only log with an in-memory index. The SQLite of key-value stores. No server, no JVM, no cluster. A Rust library, TCP server, CLI, and MCP server. By Pavan Nallamothu.">
-  <meta name="author" content="Pavan Nallamothu">
-  <meta name="keywords" content="embedded key value store, rust redis alternative, single binary redis, sqlite for key value, bitcask, append-only log, persistent local store, key-value database, Pavan Nallamothu">
+  <meta name="description" content="Flint is an embedded, single-binary key-value store: a persistent append-only log with an in-memory index. The SQLite of key-value stores. No server, no JVM, no cluster. A Rust library, TCP server, CLI, and MCP server. By Pavan Nallamothu (pavanchow).">
+  <meta name="author" content="Pavan Nallamothu (pavanchow)">
+  <meta name="keywords" content="embedded key value store, rust redis alternative, single binary redis, sqlite for key value, bitcask, append-only log, persistent local store, key-value database, Pavan Nallamothu, pavanchow">
   <link rel="canonical" href="https://pavanchow.github.io/flint/">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Flint: an embedded, single-binary key-value store with a persistent log and in-memory index">
-  <meta property="og:description" content="The SQLite of key-value stores. One static Rust binary, one directory, a durable append-only log and an in-memory index. Watch the log and compaction work, live. By Pavan Nallamothu.">
+  <meta property="og:description" content="The SQLite of key-value stores. One static Rust binary, one directory, a durable append-only log and an in-memory index. Watch the log and compaction work, live. By Pavan Nallamothu (pavanchow).">
   <meta property="og:url" content="https://pavanchow.github.io/flint/">
   <meta name="twitter:card" content="summary">
   <script type="application/ld+json">
@@ -101,6 +101,10 @@
     footer{padding:64px 0;border-top:1px solid var(--line);text-align:center;color:var(--muted)}
     footer .name{color:var(--ink);font-weight:600}
   </style>
+<link rel="author" href="https://github.com/pavanchow">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Person","name":"Pavan Nallamothu","alternateName":"pavanchow","url":"https://github.com/pavanchow","sameAs":["https://github.com/pavanchow","https://hackerone.com/pavanchow"]}
+</script>
 </head>
 <body>
   <nav><div class="row">
@@ -190,7 +194,7 @@ keydir["user"] = { file: 3, offset: 152, len: 5 }
 
   <noscript>
     <div class="wrap" style="padding:40px 28px;color:#6e6e73">
-      Flint is an embedded, single-binary key-value store: a persistent append-only log with an in-memory index, the SQLite of key-value stores. Every write appends a CRC-checked record to the active log segment, an in-memory index maps each key to its latest value offset, and compaction reclaims space from overwritten versions and tombstones. It ships as a Rust library, a TCP server, a CLI, and an MCP server. Source at github.com/pavanchow/flint. By Pavan Nallamothu.
+      Flint is an embedded, single-binary key-value store: a persistent append-only log with an in-memory index, the SQLite of key-value stores. Every write appends a CRC-checked record to the active log segment, an in-memory index maps each key to its latest value offset, and compaction reclaims space from overwritten versions and tombstones. It ships as a Rust library, a TCP server, a CLI, and an MCP server. Source at github.com/pavanchow/flint. By Pavan Nallamothu (pavanchow).
     </div>
   </noscript>
 
