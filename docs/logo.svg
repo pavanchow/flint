@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Flint logo">
+  <defs>
+    <linearGradient id="flT" x1="0" y1="0" x2="128" y2="128" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f4763b"/>
+      <stop offset="1" stop-color="#c1370a"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#flT)"/>
+  <g fill="#fff">
+    <rect x="26" y="52" width="76" height="14" rx="5"/>
+    <rect x="26" y="72" width="76" height="14" rx="5" opacity=".82"/>
+    <rect x="26" y="92" width="52" height="14" rx="5" opacity=".64"/>
+  </g>
+  <path d="M74 20 L82 36 L98 40 L84 50 L88 66 L74 56 L60 66 L64 50 L50 40 L66 36 Z" fill="#fff"/>
+</svg>

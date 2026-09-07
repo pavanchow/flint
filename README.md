@@ -1,3 +1,5 @@
+<img src="docs/logo.svg" alt="Flint logo" width="96">
+
 # Flint
 
 **An embedded, single-binary key-value store: a persistent append-only log with an in-memory index.**
