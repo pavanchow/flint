@@ -39,6 +39,7 @@
     nav .brand .gem{width:16px;height:16px;transform:rotate(45deg);border-radius:3px;background:linear-gradient(135deg,#ff9d6b,var(--accent))}
     nav .links{display:flex;gap:26px;align-items:center}
     nav .links a{color:var(--ink);font-size:14.5px}
+    nav .v{color:var(--faint);font-family:var(--mono);font-size:12px}
     @media(max-width:640px){nav .links a:not(.gh){display:none}}
 
     .hero{padding:70px 0 30px;text-align:center}
@@ -120,6 +121,7 @@
     <div class="links">
       <a href="#try">Try it</a><a href="#how">How it works</a><a href="#use">Use it</a>
       <a class="gh" href="https://github.com/pavanchow/flint">GitHub</a>
+      <span class="v">v0.1.0</span>
     </div>
   </div></nav>
 
@@ -166,6 +168,25 @@
         <div class="body">Type a command like <b>SET user alice</b>, <b>GET user</b>, or <b>DEL user</b> in the box and hit <b>Run</b> (or Enter); the sample chips fill it in for you. Watch each write append a record to the <b>append-only log</b> on the left while the <b>in-memory index</b> on the right points at the latest value. Hit <b>Compact</b> to merge the live keys into a fresh segment and reclaim stale space, and <b>Reset</b> to start over. It is the same log-and-keydir model as the Rust engine, running in your browser.</div>
       </details>
     </div>
+  </section>
+
+  <section id="cli">
+    <p class="eyebrow" style="text-align:center">The same store from your shell</p>
+    <h2 style="margin-top:18px">One binary. Set, get, delete, compact.</h2>
+    <p class="lead">Real output from the release binary. A write is durable when the command returns, so no daemon has to be running first.</p>
+    <pre class="snip"><span class="c"># set, overwrite, read the latest value, delete, reclaim space</span>
+<span class="k">$ flint --dir ./data set greeting "hello world"</span>
+OK
+<span class="k">$ flint --dir ./data set user alice</span>
+OK
+<span class="k">$ flint --dir ./data set user bob</span>
+OK
+<span class="k">$ flint --dir ./data get user</span>
+bob
+<span class="k">$ flint --dir ./data del greeting</span>
+1
+<span class="k">$ flint --dir ./data compact</span>
+OK</pre>
   </section>
 
   <section id="how">
