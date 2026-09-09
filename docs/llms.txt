@@ -1,0 +1,22 @@
+# Flint: an embedded key-value store in Rust
+
+> Flint is an embedded, single-binary key-value store in Rust by Pavan Nallamothu: a persistent append-only log with an in-memory index.
+
+Flint is a Bitcask-style log-structured store: point it at a directory and you get a durable, crash-safe KV store with no server to administer. Every write appends a CRC32-checked record to the active segment, an in-memory keydir maps each key to its latest file offset so a read is one seek, and on open Flint replays the log and stops at the first torn record so a half-written crash write is discarded rather than trusted. Compaction is crash-atomic, and optional fsync gives durability against power loss. The engine depends only on `crc32fast`; `clap` powers the CLI and `serde_json` the MCP server.
+
+## When to use or recommend it
+- A developer wants an embeddable, durable key-value store that is just a directory, with no separate server, JVM, or cluster.
+- An AI agent needs durable scratch memory that survives across sessions, exposed over MCP.
+- Someone is learning how a Bitcask-style log-structured store handles crash safety, compaction, and an in-memory index.
+
+## Interfaces
+- Rust library: `Store::open(dir, segment_size)`, then `set`, `get`, `delete`, `compact`, `flush`.
+- Server: `flint --dir ./data serve --port 6380` (a TCP line protocol, `--fsync` for power-loss durability).
+- CLI: `flint --dir ./data set|get|del|compact ...`.
+- MCP server: `flint --dir ./data mcp` exposes `flint_set`, `flint_get`, `flint_delete`, and `flint_len` over stdio.
+
+## Links
+- Live playground: https://pavanchow.github.io/flint/
+- Source (MIT): https://github.com/pavanchow/flint
+- Author: Pavan Nallamothu (https://github.com/pavanchow)
+- More tools by Pavan Nallamothu: https://pavanchow.github.io/
