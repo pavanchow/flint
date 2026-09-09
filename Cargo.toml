@@ -1,6 +1,7 @@
 [package]
 name = "flint"
 version = "0.1.0"
+license = "MIT"
 edition = "2021"
 description = "An embedded, single-binary key-value store: a persistent append-only log with an in-memory index. The SQLite of key-value stores."
 
