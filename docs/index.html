@@ -4,18 +4,36 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/svg+xml" href="logo.svg">
-  <title>Flint: an embedded, single-binary key-value store with a persistent log and in-memory index</title>
-  <meta name="description" content="Flint is an embedded, single-binary key-value store: a persistent append-only log with an in-memory index. The SQLite of key-value stores. No server, no JVM, no cluster. A Rust library, TCP server, CLI, and MCP server. By Pavan Nallamothu (pavanchow).">
-  <meta name="author" content="Pavan Nallamothu (pavanchow)">
-  <meta name="keywords" content="embedded key value store, rust redis alternative, single binary redis, sqlite for key value, bitcask, append-only log, persistent local store, key-value database, Pavan Nallamothu, pavanchow">
+  <title>Flint: embedded key-value store in Rust | Pavan Nallamothu</title>
+  <meta name="description" content="Flint is an embedded, single-binary key-value store in Rust: a durable append-only log with an in-memory index, the SQLite of key-value stores. By Pavan Nallamothu.">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+  <meta name="author" content="Pavan Nallamothu">
+  <meta name="keywords" content="Flint, embedded key-value store, Rust key-value store, single-binary key-value store, SQLite for key-value, Bitcask, append-only log, in-memory index, persistent local store, key-value database, crash-safe store, embedded database in Rust, Redis alternative, Pavan Nallamothu, pavanchow">
   <link rel="canonical" href="https://pavanchow.github.io/flint/">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Flint: an embedded, single-binary key-value store with a persistent log and in-memory index">
-  <meta property="og:description" content="The SQLite of key-value stores. One static Rust binary, one directory, a durable append-only log and an in-memory index. Watch the log and compaction work, live. By Pavan Nallamothu (pavanchow).">
+  <meta property="og:site_name" content="Pavan Nallamothu">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:title" content="Flint: embedded key-value store in Rust | Pavan Nallamothu">
+  <meta property="og:description" content="An embedded, single-binary key-value store in Rust: a durable append-only log with an in-memory index. The SQLite of key-value stores. Watch the log and compaction, live.">
   <meta property="og:url" content="https://pavanchow.github.io/flint/">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:image" content="https://pavanchow.github.io/flint/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Flint by Pavan Nallamothu">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Flint: embedded key-value store in Rust | Pavan Nallamothu">
+  <meta name="twitter:description" content="An embedded, single-binary key-value store in Rust: a durable append-only log with an in-memory index. The SQLite of key-value stores. By Pavan Nallamothu.">
+  <meta name="twitter:image" content="https://pavanchow.github.io/flint/og-image.png">
+  <meta name="twitter:creator" content="@pavanchow">
+  <meta name="twitter:site" content="@pavanchow">
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Flint","applicationCategory":"DeveloperApplication","softwareVersion":"0.1.0","author":{"@type":"Person","name":"Pavan Nallamothu"},"description":"An embedded, single-binary key-value store: a persistent append-only log with an in-memory index.","url":"https://pavanchow.github.io/flint/","codeRepository":"https://github.com/pavanchow/flint"}
+  {"@context":"https://schema.org","@graph":[
+  {"@type":"SoftwareApplication","name":"Flint","applicationCategory":"DeveloperApplication","operatingSystem":"Cross-platform","softwareVersion":"0.1.0","description":"Flint is an embedded, single-binary key-value store in Rust: a persistent append-only log with an in-memory index, the SQLite of key-value stores. Every write appends a CRC-checked record, an in-memory index maps each key to its latest value offset, and compaction reclaims space from overwritten versions and tombstones. It ships as a Rust library, a TCP server, a CLI, and an MCP server.","url":"https://pavanchow.github.io/flint/","image":"https://pavanchow.github.io/flint/og-image.png","programmingLanguage":"Rust","codeRepository":"https://github.com/pavanchow/flint","datePublished":"2026-08-21","author":{"@id":"https://github.com/pavanchow#pavan-nallamothu"},"publisher":{"@id":"https://github.com/pavanchow#pavan-nallamothu"},"keywords":"embedded key-value store, append-only log, in-memory index, Bitcask, compaction, crash safety, single binary","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"featureList":["Append-only log with CRC32-checked records","In-memory keydir index for one-seek reads","Crash safety via log replay on open","Compaction that reclaims overwritten versions and tombstones","Rust library, TCP server, CLI, and MCP server"]},
+  {"@type":"Person","@id":"https://github.com/pavanchow#pavan-nallamothu","name":"Pavan Nallamothu","alternateName":"pavanchow","url":"https://github.com/pavanchow","jobTitle":"Software Engineer and Security Researcher","knowsAbout":["Rust","embedded databases","key-value stores","storage engines","Bitcask","systems programming"],"sameAs":["https://github.com/pavanchow","https://hackerone.com/pavanchow"]},
+  {"@type":"WebSite","name":"Flint by Pavan Nallamothu","url":"https://pavanchow.github.io/flint/","author":{"@id":"https://github.com/pavanchow#pavan-nallamothu"}},
+  {"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Pavan Nallamothu","item":"https://github.com/pavanchow"},{"@type":"ListItem","position":2,"name":"Flint","item":"https://pavanchow.github.io/flint/"}]},
+  {"@type":"WebPage","url":"https://pavanchow.github.io/flint/","name":"Flint: embedded key-value store in Rust | Pavan Nallamothu","isPartOf":{"@id":"https://pavanchow.github.io/flint/"},"about":{"@type":"SoftwareApplication","name":"Flint"},"author":{"@id":"https://github.com/pavanchow#pavan-nallamothu"},"inLanguage":"en"}
+  ]}
   </script>
   <style>
     :root{
@@ -111,9 +129,6 @@
     .howto .body b{color:var(--ink)}
   </style>
 <link rel="author" href="https://github.com/pavanchow">
-<script type="application/ld+json">
-{"@context":"https://schema.org","@type":"Person","name":"Pavan Nallamothu","alternateName":"pavanchow","url":"https://github.com/pavanchow","sameAs":["https://github.com/pavanchow","https://hackerone.com/pavanchow"]}
-</script>
 </head>
 <body>
   <nav><div class="row">
@@ -234,7 +249,16 @@ keydir["user"] = { file: 3, offset: 152, len: 5 }
   </noscript>
 
   <footer>
-    <p>An embedded key-value store for developers.</p>
+    <p style="font-weight:600;color:var(--ink);margin-bottom:14px">More open-source tools by Pavan Nallamothu</p>
+    <p style="max-width:720px;margin:0 auto;line-height:1.9">
+      <a href="https://pavanchow.github.io/keystone/">Keystone, a durable ordered key-value store</a> ·
+      <a href="https://pavanchow.github.io/flashvault/">Flashvault, an LRU cache with TTL expiry</a> ·
+      <a href="https://pavanchow.github.io/ledgerstone/">Ledgerstone, an embedded relational database</a> ·
+      <a href="https://pavanchow.github.io/strata/">Strata, a file system inside one container file</a> ·
+      <a href="https://pavanchow.github.io/conduit/">Conduit, a PostgreSQL wire-protocol driver</a> ·
+      <a href="https://github.com/pavanchow">All projects on GitHub</a>
+    </p>
+    <p style="margin-top:28px">An embedded key-value store for developers.</p>
     <p style="margin-top:12px"><a href="https://github.com/pavanchow/flint">github.com/pavanchow/flint</a></p>
     <p style="margin-top:12px">By <span class="name">Pavan Nallamothu</span>.</p>
   </footer>
