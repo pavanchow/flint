@@ -12,7 +12,7 @@ By Pavan Nallamothu.
 Redis is wonderful and also a lot: a dedicated server process, persistence tuning, and cluster
 management just to cache a few thousand keys. SQLite proved developers want a database that is
 just a file in the project directory. Flint is that for key-value data. One static Rust binary,
-two small dependencies, an append-only log on disk, and a hash index in memory.
+three small dependencies, an append-only log on disk, and a hash index in memory.
 
 ## Use it as a library
 
