@@ -6,6 +6,8 @@ Flint is an embedded, single-binary key-value store in Rust: a Bitcask-style per
 
 **[Live demo](https://pavanchow.github.io/flint/)** · MIT licensed · written in Rust
 
+Built from scratch by [Pavan Nallamothu](https://pavanchow.github.io/) ([LinkedIn](https://www.linkedin.com/in/pavanchow/), [GitHub](https://github.com/pavanchow)).
+
 ## Why
 
 Redis is wonderful and also a lot: a dedicated server process, persistence tuning, and cluster
